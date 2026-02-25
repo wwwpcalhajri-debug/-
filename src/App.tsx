@@ -593,16 +593,33 @@ export default function App() {
     const isMyTurn = socket?.id === currentPlayerId;
     const currentP = room.players.find((p: any) => p.id === currentPlayerId);
     const revealedPunishment = room.punishments.find((p: any) => p.revealedBy === currentPlayerId && p.revealed);
+    const isEveryoneDone = room.currentPunishmentPlayerIndex >= room.punishmentOrder.length;
 
     return (
       <div className="flex flex-col min-h-screen p-6 space-y-6">
         <div className="text-center space-y-2">
           <h2 className="text-4xl font-black text-red-500">وقت العقاب 😈</h2>
-          <p className="text-blue-200">الدور على:</p>
-          <div className="flex items-center justify-center gap-3 bg-white/10 p-4 rounded-3xl border border-white/20">
-            <span className="text-4xl">{currentP?.emoji}</span>
-            <span className="text-2xl font-bold">{currentP?.name}</span>
-          </div>
+          {isEveryoneDone ? (
+            <div className="space-y-4 py-4">
+              <p className="text-2xl font-bold text-emerald-400">انتهت جميع العقوبات! ✨</p>
+              {isHost && (
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="px-8 py-3 bg-blue-500 text-white font-bold rounded-2xl shadow-lg"
+                >
+                  العودة للرئيسية
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              <p className="text-blue-200">الدور على:</p>
+              <div className="flex items-center justify-center gap-3 bg-white/10 p-4 rounded-3xl border border-white/20">
+                <span className="text-4xl">{currentP?.emoji}</span>
+                <span className="text-2xl font-bold">{currentP?.name}</span>
+              </div>
+            </>
+          )}
         </div>
 
         {shuffling ? (
@@ -615,13 +632,13 @@ export default function App() {
             {room.punishments.map((p: any, idx: number) => (
               <button
                 key={idx}
-                disabled={!isMyTurn || p.revealed}
+                disabled={isEveryoneDone || !isMyTurn || p.revealed}
                 onClick={() => handleRevealPunishment(idx)}
                 className={cn(
                   "aspect-square rounded-2xl flex items-center justify-center text-2xl font-bold transition-all border-2",
                   p.revealed 
                     ? "bg-slate-800 border-slate-700 text-slate-600" 
-                    : isMyTurn 
+                    : (!isEveryoneDone && isMyTurn)
                       ? "bg-white/10 border-white/20 hover:bg-white/20 active:scale-95" 
                       : "bg-white/5 border-white/5 opacity-50"
                 )}

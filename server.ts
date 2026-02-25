@@ -161,29 +161,9 @@ async function startServer() {
       }
     });
 
-    socket.on("submit_answer", ({ roomId, answerIndex }) => {
+    const goToNextQuestion = (roomId: string) => {
       const room = rooms.get(roomId);
-      if (!room || room.status !== 'question') return;
-
-      const player = room.players.find(p => p.id === socket.id);
-      if (!player || player.answered) return;
-
-      const question = QUESTIONS[room.currentQuestionIndex];
-      player.answered = true;
-      if (answerIndex === question.correct) {
-        player.score += 10;
-        player.lastAnswerCorrect = true;
-      } else {
-        player.errors += 1;
-        player.lastAnswerCorrect = false;
-      }
-
-      io.to(roomId).emit("room_updated", room);
-    });
-
-    socket.on("next_question", (roomId) => {
-      const room = rooms.get(roomId);
-      if (!room || !room.players.find(p => p.id === socket.id)?.isHost) return;
+      if (!room) return;
 
       // Check if any player didn't answer and mark as error
       room.players.forEach(p => {
@@ -207,10 +187,13 @@ async function startServer() {
           io.to(roomId).emit("room_updated", room);
           
           setTimeout(() => {
-            room.status = 'question';
-            room.currentQuestionIndex = nextIndex;
-            room.players.forEach(p => { p.answered = false; p.lastAnswerCorrect = null; });
-            io.to(roomId).emit("room_updated", room);
+            const r = rooms.get(roomId);
+            if (r) {
+              r.status = 'question';
+              r.currentQuestionIndex = nextIndex;
+              r.players.forEach(p => { p.answered = false; p.lastAnswerCorrect = null; });
+              io.to(roomId).emit("room_updated", r);
+            }
           }, 2000);
         } else {
           room.currentQuestionIndex = nextIndex;
@@ -218,6 +201,39 @@ async function startServer() {
           io.to(roomId).emit("room_updated", room);
         }
       }
+    };
+
+    socket.on("submit_answer", ({ roomId, answerIndex }) => {
+      const room = rooms.get(roomId);
+      if (!room || room.status !== 'question') return;
+
+      const player = room.players.find(p => p.id === socket.id);
+      if (!player || player.answered) return;
+
+      const question = QUESTIONS[room.currentQuestionIndex];
+      player.answered = true;
+      if (answerIndex === question.correct) {
+        player.score += 10;
+        player.lastAnswerCorrect = true;
+      } else {
+        player.errors += 1;
+        player.lastAnswerCorrect = false;
+      }
+
+      io.to(roomId).emit("room_updated", room);
+
+      // Check if all players answered
+      if (room.players.every(p => p.answered)) {
+        setTimeout(() => {
+          goToNextQuestion(roomId);
+        }, 1500); // Small delay so they see their own result
+      }
+    });
+
+    socket.on("next_question", (roomId) => {
+      const room = rooms.get(roomId);
+      if (!room || !room.players.find(p => p.id === socket.id)?.isHost) return;
+      goToNextQuestion(roomId);
     });
 
     socket.on("go_to_punishments", (roomId) => {
@@ -225,10 +241,17 @@ async function startServer() {
       if (!room || !room.players.find(p => p.id === socket.id)?.isHost) return;
 
       room.status = 'punishment';
-      // Sort players by errors (descending)
-      room.punishmentOrder = [...room.players]
-        .sort((a, b) => b.errors - a.errors)
-        .map(p => p.id);
+      // Create punishment order: each player repeated by their error count
+      const order: string[] = [];
+      const sortedPlayers = [...room.players].sort((a, b) => b.errors - a.errors);
+      
+      sortedPlayers.forEach(p => {
+        for (let i = 0; i < p.errors; i++) {
+          order.push(p.id);
+        }
+      });
+
+      room.punishmentOrder = order;
       room.currentPunishmentPlayerIndex = 0;
       io.to(roomId).emit("room_updated", room);
     });
@@ -256,24 +279,21 @@ async function startServer() {
 
       room.currentPunishmentPlayerIndex += 1;
       
-      // If all players in order finished, check if we should reset or end
-      if (room.currentPunishmentPlayerIndex >= room.punishmentOrder.length) {
-        // Check if all punishments revealed, if so shuffle
-        if (room.punishments.every(p => p.revealed)) {
-          io.to(roomId).emit("shuffling_punishments");
-          setTimeout(() => {
-            room.punishments = PUNISHMENTS
+      // Check if all punishments revealed, if so shuffle
+      if (room.punishments.every(p => p.revealed)) {
+        io.to(roomId).emit("shuffling_punishments");
+        setTimeout(() => {
+          const r = rooms.get(roomId);
+          if (r) {
+            r.punishments = PUNISHMENTS
               .sort(() => Math.random() - 0.5)
               .map(p => ({ text: p, revealed: false, revealedBy: null }));
-            room.currentPunishmentPlayerIndex = 0;
-            io.to(roomId).emit("room_updated", room);
-          }, 2000);
-        } else {
-          // Restart punishment round for fun or end? User said "بعد انتهاء جميع العقوبات"
-          // Let's just keep it in punishment mode until they leave or host resets
-        }
+            io.to(roomId).emit("room_updated", r);
+          }
+        }, 2000);
+      } else {
+        io.to(roomId).emit("room_updated", room);
       }
-      io.to(roomId).emit("room_updated", room);
     });
 
     socket.on("disconnect", () => {
