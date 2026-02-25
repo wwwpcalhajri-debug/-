@@ -62,11 +62,7 @@ export default function App() {
   const [shuffling, setShuffling] = useState(false);
 
   useEffect(() => {
-    const newSocket = io({
-      transports: ['polling', 'websocket'],
-      reconnectionAttempts: 5,
-      timeout: 10000,
-    });
+   const newSocket = io("https://game-pqit.onrender.com");
     setSocket(newSocket);
 
     newSocket.on('connect_error', (err) => {
