@@ -272,8 +272,11 @@ async function startServer() {
       if (socket.id !== currentPlayerId) return;
 
       room.currentPunishmentPlayerIndex += 1;
-      
-      if (room.punishments.every(p => p.revealed)) {
+      const isEveryoneDone = room.currentPunishmentPlayerIndex >= room.punishmentOrder.length;
+      const allRevealed = room.punishments.every(p => p.revealed);
+
+      if (allRevealed && !isEveryoneDone) {
+        // Board is full but more punishments are pending
         io.to(roomId).emit("shuffling_punishments");
         setTimeout(() => {
           const r = rooms.get(roomId);
